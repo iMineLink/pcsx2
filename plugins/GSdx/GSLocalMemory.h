@@ -119,13 +119,15 @@ public:
 
 	static psm_t m_psm[64];
 
-	static const int m_vmsize = 1024 * 1024 * 4;
+	static constexpr int m_vmsize = 1024 * 1024 * 4;
 
-	uint8* m_vm8; 
-	uint16* m_vm16; 
+	uint8* m_vm8;
+	uint16* m_vm16;
 	uint32* m_vm32;
 
 	GSClut m_clut;
+
+	GLuint m_ogl_hw_vm_ID;
 
 protected:
 	bool m_use_fifo_alloc;

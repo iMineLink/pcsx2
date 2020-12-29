@@ -41,6 +41,8 @@ private:
 	bool m_userhacks_enabled_gs_mem_clear;
 	bool m_userHacks_merge_sprite;
 
+	GLsync m_ogl_vm_sync;
+
 	static const float SSR_UV_TOLERANCE;
 
 	#pragma region hacks
@@ -138,6 +140,8 @@ private:
 	float alpha1(int L, int X0, int X1);
 	void SwSpriteRender();
 	bool CanUseSwSpriteRender(bool allow_64x64_sprite);
+	void WaitBuffer();
+	void LockBuffer();
 
 	template <bool linear> void RoundSpriteOffset();
 

@@ -139,6 +139,7 @@ public:
 		bool m_used;
 		GSDirtyRectList m_dirty;
 		GSVector4i m_valid;
+		GSVector4i m_last_draw_r;
 		bool m_depth_supported;
 		bool m_dirty_alpha;
 

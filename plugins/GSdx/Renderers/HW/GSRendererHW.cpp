@@ -1128,6 +1128,30 @@ void GSRendererHW::RoundSpriteOffset()
 	}
 }
 
+void GSRendererHW::WaitBuffer()
+{
+	if (m_ogl_vm_sync)
+	{
+		while (1)
+		{
+			GLenum waitReturn = glClientWaitSync(m_ogl_vm_sync, GL_SYNC_FLUSH_COMMANDS_BIT, 1);
+			if (waitReturn == GL_ALREADY_SIGNALED || waitReturn == GL_CONDITION_SATISFIED)
+				return;
+			else
+				std::this_thread::yield();
+		}
+	}
+}
+
+void GSRendererHW::LockBuffer()
+{
+	if (m_ogl_vm_sync)
+	{
+		glDeleteSync(m_ogl_vm_sync);
+	}
+	m_ogl_vm_sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+}
+
 void GSRendererHW::Draw()
 {
 	if(m_dev->IsLost() || IsBadFrame()) {
@@ -1135,6 +1159,9 @@ void GSRendererHW::Draw()
 		return;
 	}
 	GL_PUSH("HW Draw %d", s_n);
+
+	// Wait until the gpu is no longer using the buffer.
+	WaitBuffer();
 
 	GSDrawingEnvironment& env = m_env;
 	GSDrawingContext* context = m_context;
@@ -1207,12 +1234,20 @@ void GSRendererHW::Draw()
 	TEX0.TBW = context->FRAME.FBW;
 	TEX0.PSM = context->FRAME.PSM;
 
+	const int upscale_multiplier = m_upscale_multiplier ? m_upscale_multiplier : 1;
+	const GSVector4i sin = GSVector4i(context->scissor.in);
+	int w = sin.z;
+	int h = sin.w;
+	printf("Sin: %d, %d\n", w, h);
+
 	GSTextureCache::Target* rt = NULL;
 	GSTexture* rt_tex = NULL;
 	if (!no_rt) {
-		rt = m_tc->LookupTarget(TEX0, m_width, m_height, GSTextureCache::RenderTarget, true, fm);
+		rt = m_tc->LookupTarget(TEX0, w, h, GSTextureCache::RenderTarget, true, fm);
 		rt_tex = rt->m_texture;
 	}
+
+	// TODO: Check size.
 
 	TEX0.TBP0 = context->ZBUF.Block();
 	TEX0.TBW = context->FRAME.FBW;
@@ -1221,7 +1256,7 @@ void GSRendererHW::Draw()
 	GSTextureCache::Target* ds = NULL;
 	GSTexture* ds_tex = NULL;
 	if (!no_ds) {
-		ds = m_tc->LookupTarget(TEX0, m_width, m_height, GSTextureCache::DepthStencil, context->DepthWrite());
+		ds = m_tc->LookupTarget(TEX0, w, h, GSTextureCache::DepthStencil, context->DepthWrite());
 		ds_tex = ds->m_texture;
 	}
 
@@ -1507,6 +1542,9 @@ void GSRendererHW::Draw()
 
 	DrawPrims(rt_tex, ds_tex, m_src);
 
+	// Place a fence wich will be removed when the draw command has finished.
+	LockBuffer();
+
 	//
 
 	context->TEST = TEST;
@@ -1525,25 +1563,42 @@ void GSRendererHW::Draw()
 	}
 #endif
 
+	const auto t0 = std::chrono::high_resolution_clock::now();
+	// Wait until the gpu is no longer using the buffer.
+	WaitBuffer();  // TODO: remove this after the shader readback is implemented
+	const auto t1 = std::chrono::high_resolution_clock::now();
+	const auto d01 = t1 - t0;
+	printf("Waited for:       %d us\n", d01.count() / 1000);
+
 	if(fm != 0xffffffff && rt)
 	{
 		//rt->m_valid = rt->m_valid.runion(r);
 		rt->UpdateValidity(m_r);
+		m_tc->Read(rt, m_r);
 
 		m_tc->InvalidateVideoMem(context->offset.fb, m_r, false);
 
 		m_tc->InvalidateVideoMemType(GSTextureCache::DepthStencil, context->FRAME.Block());
 	}
 
+	const auto t2 = std::chrono::high_resolution_clock::now();
+	const auto d12 = t2 - t1;
+	printf("Readback rt took: %d us\n", d12.count() / 1000);
+
 	if(zm != 0xffffffff && ds)
 	{
 		//ds->m_valid = ds->m_valid.runion(r);
 		ds->UpdateValidity(m_r);
+		m_tc->Read(ds, m_r);
 
 		m_tc->InvalidateVideoMem(context->offset.zb, m_r, false);
 
 		m_tc->InvalidateVideoMemType(GSTextureCache::RenderTarget, context->ZBUF.Block());
 	}
+
+	const auto t3 = std::chrono::high_resolution_clock::now();
+	const auto d23 = t3 - t2;
+	printf("Readback ds took: %d us\n", d23.count() / 1000);
 
 	//
 
@@ -1584,6 +1639,9 @@ void GSRendererHW::Draw()
 	if (rt)
 		m_tc->Read(rt, m_r);
 	#endif
+
+	delete rt;
+	delete ds;
 }
 
 // hacks

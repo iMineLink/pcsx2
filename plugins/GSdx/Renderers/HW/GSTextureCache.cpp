@@ -690,7 +690,7 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(const GIFRegTEX0& TEX0, int
 
 		m_renderer->m_dev->ClearRenderTarget(dst->m_texture, 0); // new frame buffers after reset should be cleared, don't display memory garbage
 
-		if (m_preload_frame) {
+		if (true || m_preload_frame) {
 			// Load GS data into frame. Game can directly uploads a background or the full image in
 			// "CTRC" buffer. It will also avoid various black screen issue in gs dump.
 			//
@@ -1549,7 +1549,10 @@ GSTextureCache::Target* GSTextureCache::CreateTarget(const GIFRegTEX0& TEX0, int
 		t->m_texture = m_renderer->m_dev->CreateSparseDepthStencil(w, h);
 	}
 
-	m_dst[type].push_front(t);
+	t->m_last_draw_r = GSVector4i(0, 0, w, h);
+
+	// No target caching.
+	// m_dst[type].push_front(t);
 
 	return t;
 }
@@ -1898,6 +1901,7 @@ GSTextureCache::Target::Target(GSRenderer* r, const GIFRegTEX0& TEX0, uint8* tem
 	, m_type(-1)
 	, m_used(false)
 	, m_depth_supported(depth_supported)
+	, m_last_draw_r(0, 0, 0, 0)
 {
 	m_TEX0 = TEX0;
 	m_32_bits_fmt |= (GSLocalMemory::m_psm[TEX0.PSM].trbpp != 16);
@@ -1917,13 +1921,15 @@ void GSTextureCache::Target::Update()
 	// Alternate
 	// 1/ uses multiple vertex rectangle
 
-	GSVector2i t_size = default_rt_size;
+	GSVector2i t_size = GSVector2i(m_last_draw_r.z, m_last_draw_r.w);
 
+	/*
 	// Ensure buffer width is at least of the minimum required value.
 	// Probably not necessary but doesn't hurt to be on the safe side.
 	// I've seen some games use buffer sizes over 1024, which might bypass our default limit
 	int buffer_width = m_TEX0.TBW << 6;
 	t_size.x = std::max(buffer_width, t_size.x);
+	*/
 
 	GSVector4i r = m_dirty.GetDirtyRectAndClear(m_TEX0, t_size);
 

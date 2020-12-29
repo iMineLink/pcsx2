@@ -81,29 +81,161 @@ GSLocalMemory::psm_t GSLocalMemory::m_psm[64];
 
 //
 
+// Callback function for printing debug statements
+void APIENTRY GLDebugMessageCallback(GLenum source, GLenum type, GLuint id,
+	GLenum severity, GLsizei length,
+	const GLchar * msg, const void* data)
+{
+	char* _source;
+	char* _type;
+	char* _severity;
+
+	switch (source) {
+	case GL_DEBUG_SOURCE_API:
+		_source = "API";
+		break;
+
+	case GL_DEBUG_SOURCE_WINDOW_SYSTEM:
+		_source = "WINDOW SYSTEM";
+		break;
+
+	case GL_DEBUG_SOURCE_SHADER_COMPILER:
+		_source = "SHADER COMPILER";
+		break;
+
+	case GL_DEBUG_SOURCE_THIRD_PARTY:
+		_source = "THIRD PARTY";
+		break;
+
+	case GL_DEBUG_SOURCE_APPLICATION:
+		_source = "APPLICATION";
+		break;
+
+	case GL_DEBUG_SOURCE_OTHER:
+		_source = "UNKNOWN";
+		break;
+
+	default:
+		_source = "UNKNOWN";
+		break;
+	}
+
+	switch (type) {
+	case GL_DEBUG_TYPE_ERROR:
+		_type = "ERROR";
+		break;
+
+	case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:
+		_type = "DEPRECATED BEHAVIOR";
+		break;
+
+	case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:
+		_type = "UDEFINED BEHAVIOR";
+		break;
+
+	case GL_DEBUG_TYPE_PORTABILITY:
+		_type = "PORTABILITY";
+		break;
+
+	case GL_DEBUG_TYPE_PERFORMANCE:
+		_type = "PERFORMANCE";
+		break;
+
+	case GL_DEBUG_TYPE_OTHER:
+		_type = "OTHER";
+		break;
+
+	case GL_DEBUG_TYPE_MARKER:
+		_type = "MARKER";
+		break;
+
+	default:
+		_type = "UNKNOWN";
+		break;
+	}
+
+	switch (severity) {
+	case GL_DEBUG_SEVERITY_HIGH:
+		_severity = "HIGH";
+		break;
+
+	case GL_DEBUG_SEVERITY_MEDIUM:
+		_severity = "MEDIUM";
+		break;
+
+	case GL_DEBUG_SEVERITY_LOW:
+		_severity = "LOW";
+		break;
+
+	case GL_DEBUG_SEVERITY_NOTIFICATION:
+		_severity = "NOTIFICATION";
+		break;
+
+	default:
+		_severity = "UNKNOWN";
+		break;
+	}
+
+	printf("%d: %s of %s severity, raised from %s: %s\n",
+		id, _type, _severity, _source, msg);
+}
+
+
 GSLocalMemory::GSLocalMemory()
 	: m_clut(this)
 {
-	m_use_fifo_alloc = theApp.GetConfigB("UserHacks") && theApp.GetConfigB("wrap_gs_mem");
-	switch (theApp.GetCurrentRendererType()) {
+	const GSRendererType renderer_type = theApp.GetCurrentRendererType();
+	m_ogl_hw_vm_ID = 0;
+	m_vm8 = nullptr;
+
+	// During init, enable debug output
+	// glEnable(GL_DEBUG_OUTPUT);
+	// glDebugMessageCallback(GLDebugMessageCallback, 0);
+	
+	if (renderer_type == GSRendererType::OGL_HW)
+	{
+		// TODO Check OGL program.
+
+		// Create the persistent mapped buffer.
+		GLbitfield flags = 0;
+		constexpr GLsizeiptr buffer_size = m_vmsize;  // TODO Check size.
+		glGenBuffers(1, &m_ogl_hw_vm_ID);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, m_ogl_hw_vm_ID);
+		flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
+		glBufferStorage(GL_SHADER_STORAGE_BUFFER, buffer_size, 0, flags);
+		glFlush();
+		printf("!!!!!!!!!!!!!!!!!!!!! Created buffer: %u\n", m_ogl_hw_vm_ID);
+
+		// Map the persistent mapped buffer.
+		flags = GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT;
+		void* buffer_ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, buffer_size, flags);
+		m_vm8 = static_cast<uint8*>(buffer_ptr);
+	}
+	else
+	{
+		m_use_fifo_alloc = theApp.GetConfigB("UserHacks") && theApp.GetConfigB("wrap_gs_mem");
+		switch (renderer_type) {
 		case GSRendererType::OGL_SW:
 			m_use_fifo_alloc = true;
 			break;
 		default:
 			break;
+		}
+
+		if (m_use_fifo_alloc)
+			m_vm8 = (uint8*)fifo_alloc(m_vmsize, 4);
+		else
+			m_vm8 = nullptr;
+
+		// Either we don't use fifo alloc or we get an error.
+		if (m_vm8 == nullptr)
+		{
+			m_vm8 = (uint8*)vmalloc(m_vmsize * 4, false);
+			m_use_fifo_alloc = false;
+		}
 	}
 
-	if (m_use_fifo_alloc)
-		m_vm8 = (uint8*)fifo_alloc(m_vmsize, 4);
-	else
-		m_vm8 = nullptr;
-
-	// Either we don't use fifo alloc or we get an error.
-	if (m_vm8 == nullptr)
-	{
-		m_vm8 = (uint8*)vmalloc(m_vmsize * 4, false);
-		m_use_fifo_alloc = false;
-	}
+	assert(m_vm8 != nullptr);
 
 	m_vm16 = (uint16*)m_vm8;
 	m_vm32 = (uint32*)m_vm8;
@@ -488,10 +620,22 @@ GSLocalMemory::GSLocalMemory()
 
 GSLocalMemory::~GSLocalMemory()
 {
-	if (m_use_fifo_alloc)
-		fifo_free(m_vm8, m_vmsize, 4);
+	if (m_ogl_hw_vm_ID)
+	{
+		glUnmapBuffer(GL_ARRAY_BUFFER);
+		glDeleteBuffers(1, &m_ogl_hw_vm_ID);
+		m_ogl_hw_vm_ID = 0;
+	}
 	else
-		vmfree(m_vm8, m_vmsize * 4);
+	{
+		if (m_use_fifo_alloc)
+			fifo_free(m_vm8, m_vmsize, 4);
+		else
+			vmfree(m_vm8, m_vmsize * 4);
+	}
+	m_vm8 = nullptr;
+	m_vm16 = nullptr;
+	m_vm32 = nullptr;
 
 	for(auto &i : m_omap) delete i.second;
 	for(auto &i : m_pomap) _aligned_free(i.second);
