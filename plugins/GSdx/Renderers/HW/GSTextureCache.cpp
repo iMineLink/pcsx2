@@ -690,7 +690,7 @@ GSTextureCache::Target* GSTextureCache::LookupTarget(const GIFRegTEX0& TEX0, int
 
 		m_renderer->m_dev->ClearRenderTarget(dst->m_texture, 0); // new frame buffers after reset should be cleared, don't display memory garbage
 
-		if (true || m_preload_frame) {
+		if (m_preload_frame) {
 			// Load GS data into frame. Game can directly uploads a background or the full image in
 			// "CTRC" buffer. It will also avoid various black screen issue in gs dump.
 			//

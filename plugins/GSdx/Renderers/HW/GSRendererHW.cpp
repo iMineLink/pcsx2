@@ -38,6 +38,7 @@ GSRendererHW::GSRendererHW(GSTextureCache* tc)
 	, m_userhacks_tcoffset_y(0)
 	, m_channel_shuffle(false)
 	, m_lod(GSVector2i(0,0))
+	, m_ogl_vm_sync(nullptr)
 {
 	m_mipmap = theApp.GetConfigI("mipmap_hw");
 	m_upscale_multiplier = theApp.GetConfigI("upscale_multiplier");
@@ -318,6 +319,9 @@ GSTexture* GSRendererHW::GetOutput(int i, int& y_offset)
 
 	if(GSTextureCache::Target* rt = m_tc->LookupTarget(TEX0, m_width, m_height, GetFramebufferHeight()))
 	{
+		rt->m_dirty.push_back(GSDirtyRect(GSVector4i(0, 0, m_width, m_height), TEX0.PSM));
+		rt->Update();
+
 		t = rt->m_texture;
 
 		int delta = TEX0.TBP0 - rt->m_TEX0.TBP0;
@@ -351,6 +355,8 @@ GSTexture* GSRendererHW::GetFeedbackOutput()
 	TEX0.PSM = m_regs->DISP[m_regs->EXTBUF.FBIN & 1].DISPFB.PSM;
 
 	GSTextureCache::Target* rt = m_tc->LookupTarget(TEX0, m_width, m_height, /*GetFrameRect(i).bottom*/0);
+	rt->m_dirty.push_back(GSDirtyRect(GSVector4i(0, 0, m_width, m_height), TEX0.PSM));
+	rt->Update();
 
 	GSTexture* t = rt->m_texture;
 
@@ -1154,6 +1160,8 @@ void GSRendererHW::LockBuffer()
 
 void GSRendererHW::Draw()
 {
+	const auto t0 = std::chrono::high_resolution_clock::now();
+
 	if(m_dev->IsLost() || IsBadFrame()) {
 		GL_INS("Warning skipping a draw call (%d)", s_n);
 		return;
@@ -1230,40 +1238,10 @@ void GSRendererHW::Draw()
 
 	GIFRegTEX0 TEX0;
 
-	TEX0.TBP0 = context->FRAME.Block();
-	TEX0.TBW = context->FRAME.FBW;
-	TEX0.PSM = context->FRAME.PSM;
-
-	const int upscale_multiplier = m_upscale_multiplier ? m_upscale_multiplier : 1;
-	const GSVector4i sin = GSVector4i(context->scissor.in);
-	int w = sin.z;
-	int h = sin.w;
-	printf("Sin: %d, %d\n", w, h);
-
-	GSTextureCache::Target* rt = NULL;
-	GSTexture* rt_tex = NULL;
-	if (!no_rt) {
-		rt = m_tc->LookupTarget(TEX0, w, h, GSTextureCache::RenderTarget, true, fm);
-		rt_tex = rt->m_texture;
-	}
-
-	// TODO: Check size.
-
-	TEX0.TBP0 = context->ZBUF.Block();
-	TEX0.TBW = context->FRAME.FBW;
-	TEX0.PSM = context->ZBUF.PSM;
-
-	GSTextureCache::Target* ds = NULL;
-	GSTexture* ds_tex = NULL;
-	if (!no_ds) {
-		ds = m_tc->LookupTarget(TEX0, w, h, GSTextureCache::DepthStencil, context->DepthWrite());
-		ds_tex = ds->m_texture;
-	}
-
 	m_src = nullptr;
 	m_texture_shuffle = false;
 
-	if(PRIM->TME)
+	if (PRIM->TME)
 	{
 		GIFRegCLAMP MIP_CLAMP = context->CLAMP;
 		int mxl = std::min<int>((int)m_context->TEX1.MXL, 6);
@@ -1291,12 +1269,14 @@ void GSRendererHW::Draw()
 			if (lcm == 1) {
 				m_lod.x = std::max<int>(k, 0);
 				m_lod.y = m_lod.x;
-			} else {
+			}
+			else {
 				// Not constant but who care !
 				if (interpolation == 2) {
 					// Mipmap Linear. Both layers are sampled, only take the big one
 					m_lod.x = std::max<int>((int)floor(m_vt.m_lod.x), 0);
-				} else {
+				}
+				else {
 					// On GS lod is a fixed float number 7:4 (4 bit for the frac part)
 #if 0
 					m_lod.x = std::max<int>((int)round(m_vt.m_lod.x + 0.0625), 0);
@@ -1330,7 +1310,8 @@ void GSRendererHW::Draw()
 			}
 
 			GL_CACHE("Mipmap LOD %d %d (%f %f) new size %dx%d (K %d L %u)", m_lod.x, m_lod.y, m_vt.m_lod.x, m_vt.m_lod.y, 1 << TEX0.TW, 1 << TEX0.TH, m_context->TEX1.K, m_context->TEX1.L);
-		} else {
+		}
+		else {
 			TEX0 = GetTex0Layer(0);
 		}
 
@@ -1406,10 +1387,54 @@ void GSRendererHW::Draw()
 		if (m_src->m_target && m_context->TEX0.PSM == PSM_PSMT8 && single_page && draw_sprite_tex) {
 			GL_INS("Channel shuffle effect detected (2nd shot)");
 			m_channel_shuffle = true;
-		} else {
+		}
+		else {
 			m_channel_shuffle = false;
 		}
 	}
+
+	const uint32 rt_psm = context->FRAME.PSM;
+	const GSLocalMemory::psm_t rt_psm_t = GSLocalMemory::m_psm[rt_psm];
+
+	// The rectangle of the draw
+	m_r = GSVector4i(m_vt.m_min.p.floor().xyxy(m_vt.m_max.p.ceil())).rintersect(GSVector4i(context->scissor.in));
+	m_r = m_r.ralign<Align_Outside>(rt_psm_t.bs);
+
+	// const int w = m_r.width();
+	// const int h = m_r.height();
+	const int w = m_r.z;
+	const int h = m_r.w;
+
+	TEX0.TBP0 = context->FRAME.Block();
+	TEX0.TBW = context->FRAME.FBW;
+	TEX0.PSM = rt_psm;
+	// const uint32 rt_real_bp = rt_psm_t.bn(m_r.x, m_r.y, TEX0.TBP0, TEX0.TBW);
+	// TEX0.TBP0 = rt_real_bp;
+	GSTextureCache::Target* rt = nullptr;
+	GSTexture* rt_tex = nullptr;
+	if (!no_rt) {
+		rt = m_tc->LookupTarget(TEX0, w, h, GSTextureCache::RenderTarget, true, fm);
+		rt_tex = rt->m_texture;
+		rt->m_dirty.push_back(GSDirtyRect(m_r, TEX0.PSM));
+		rt->Update();
+	}
+
+	const uint32 ds_psm = context->ZBUF.PSM;
+	const GSLocalMemory::psm_t ds_psm_t = GSLocalMemory::m_psm[ds_psm];
+	TEX0.TBP0 = context->ZBUF.Block();
+	TEX0.TBW = context->FRAME.FBW;
+	TEX0.PSM = context->ZBUF.PSM;
+	// const uint32 ds_real_bp = ds_psm_t.bn(m_r.x, m_r.y, TEX0.TBP0, TEX0.TBW);
+	// TEX0.TBP0 = ds_real_bp;
+	GSTextureCache::Target* ds = nullptr;
+	GSTexture* ds_tex = nullptr;
+	if (!no_ds) {
+		ds = m_tc->LookupTarget(TEX0, w, h, GSTextureCache::DepthStencil, context->DepthWrite());
+		ds_tex = ds->m_texture;
+		ds->m_dirty.push_back(GSDirtyRect(m_r, TEX0.PSM));
+		ds->Update();
+	}
+
 	if (rt) {
 		// Be sure texture shuffle detection is properly propagated
 		// Otherwise set or clear the flag (Code in texture cache only set the flag)
@@ -1417,7 +1442,7 @@ void GSRendererHW::Draw()
 		rt->m_32_bits_fmt = m_texture_shuffle || (GSLocalMemory::m_psm[context->FRAME.PSM].bpp != 16);
 	}
 
-	if(s_dump)
+	if (s_dump)
 	{
 		uint64 frame = m_perfmon.GetFrame();
 
@@ -1427,11 +1452,11 @@ void GSRendererHW::Draw()
 			// Dump Register state
 			s = format("%05d_context.txt", s_n);
 
-			m_env.Dump(m_dump_root+s);
-			m_context->Dump(m_dump_root+s);
+			m_env.Dump(m_dump_root + s);
+			m_context->Dump(m_dump_root + s);
 		}
 
-		if(s_savet && s_n >= s_saven && m_src)
+		if (s_savet && s_n >= s_saven && m_src)
 		{
 			s = format("%05d_f%lld_itex_%05x_%s_%d%d_%02x_%02x_%02x_%02x.dds",
 				s_n, frame, (int)context->TEX0.TBP0, psm_str(context->TEX0.PSM),
@@ -1439,36 +1464,33 @@ void GSRendererHW::Draw()
 				(int)context->CLAMP.MINU, (int)context->CLAMP.MAXU,
 				(int)context->CLAMP.MINV, (int)context->CLAMP.MAXV);
 
-			m_src->m_texture->Save(m_dump_root+s);
+			m_src->m_texture->Save(m_dump_root + s);
 
-			if(m_src->m_palette)
+			if (m_src->m_palette)
 			{
 				s = format("%05d_f%lld_itpx_%05x_%s.dds", s_n, frame, context->TEX0.CBP, psm_str(context->TEX0.CPSM));
 
-				m_src->m_palette->Save(m_dump_root+s);
+				m_src->m_palette->Save(m_dump_root + s);
 			}
 		}
 
-		if(s_save && s_n >= s_saven)
+		if (s_save && s_n >= s_saven)
 		{
 			s = format("%05d_f%lld_rt0_%05x_%s.bmp", s_n, frame, context->FRAME.Block(), psm_str(context->FRAME.PSM));
 
 			if (rt)
-				rt->m_texture->Save(m_dump_root+s);
+				rt->m_texture->Save(m_dump_root + s);
 		}
 
-		if(s_savez && s_n >= s_saven)
+		if (s_savez && s_n >= s_saven)
 		{
 			s = format("%05d_f%lld_rz0_%05x_%s.bmp", s_n, frame, context->ZBUF.Block(), psm_str(context->ZBUF.PSM));
 
 			if (ds_tex)
-				ds_tex->Save(m_dump_root+s);
+				ds_tex->Save(m_dump_root + s);
 		}
 
 	}
-
-	// The rectangle of the draw
-	m_r = GSVector4i(m_vt.m_min.p.xyxy(m_vt.m_max.p)).rintersect(GSVector4i(context->scissor.in));
 
 	if(m_hacks.m_oi && !(this->*m_hacks.m_oi)(rt_tex, ds_tex, m_src))
 	{
@@ -1563,24 +1585,16 @@ void GSRendererHW::Draw()
 	}
 #endif
 
-	const auto t0 = std::chrono::high_resolution_clock::now();
-	// Wait until the gpu is no longer using the buffer.
-	WaitBuffer();  // TODO: remove this after the shader readback is implemented
 	const auto t1 = std::chrono::high_resolution_clock::now();
-	const auto d01 = t1 - t0;
-	printf("Waited for:       %d us\n", d01.count() / 1000);
-
 	if(fm != 0xffffffff && rt)
 	{
 		//rt->m_valid = rt->m_valid.runion(r);
-		rt->UpdateValidity(m_r);
+		// rt->UpdateValidity(m_r);
 		m_tc->Read(rt, m_r);
 
+		// TODO Add support for CLUT invalidation.
 		m_tc->InvalidateVideoMem(context->offset.fb, m_r, false);
-
-		m_tc->InvalidateVideoMemType(GSTextureCache::DepthStencil, context->FRAME.Block());
 	}
-
 	const auto t2 = std::chrono::high_resolution_clock::now();
 	const auto d12 = t2 - t1;
 	printf("Readback rt took: %d us\n", d12.count() / 1000);
@@ -1591,14 +1605,19 @@ void GSRendererHW::Draw()
 		ds->UpdateValidity(m_r);
 		m_tc->Read(ds, m_r);
 
+		// TODO Add support for CLUT invalidation.
 		m_tc->InvalidateVideoMem(context->offset.zb, m_r, false);
-
-		m_tc->InvalidateVideoMemType(GSTextureCache::RenderTarget, context->ZBUF.Block());
 	}
-
 	const auto t3 = std::chrono::high_resolution_clock::now();
 	const auto d23 = t3 - t2;
 	printf("Readback ds took: %d us\n", d23.count() / 1000);
+
+	// Wait until the gpu is no longer using the buffer.
+	WaitBuffer();  // TODO: remove this after the shader readback is implemented (then this only needs to be called on EE write/read).
+
+	const auto t4 = std::chrono::high_resolution_clock::now();
+	const auto d34 = t4 - t3;
+	printf("Waited for:       %d us\n", d34.count() / 1000);
 
 	//
 
