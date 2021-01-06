@@ -39,9 +39,9 @@ private:
 	inline void ResetStates();
 	inline void SetupIA(const float& sx, const float& sy);
 	inline void EmulateTextureShuffleAndFbmask();
-	inline void EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::Source* tex);
+	inline void EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::Surface* tex);
 	inline void EmulateBlending(bool& DATE_GL42, bool& DATE_GL45);
-	inline void EmulateTextureSampler(const GSTextureCache::Source* tex);
+	inline void EmulateTextureSampler(const GSTextureCache::Surface* tex);
 	inline void EmulateZbuffer();
 	inline void EmulateATST(float& AREF, GSHWDrawConfig::PSSelector& ps, bool pass_2);
 
@@ -50,7 +50,7 @@ public:
 	~GSRendererNew() override {}
 
 	bool CreateDevice(GSDevice* dev, const WindowInfo& wi) override;
-	void DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* tex) override;
+	void DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* tex) override;
 
 	PRIM_OVERLAP PrimitiveOverlap();
 

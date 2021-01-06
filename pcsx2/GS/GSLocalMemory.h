@@ -102,6 +102,18 @@ public:
 		, m_psm(psm)
 	{
 	}
+
+	bool operator==(const GSOffset& rhs) const
+	{
+		return (m_bp == rhs.m_bp)
+			&& (m_bwPg == rhs.m_bwPg)
+			&& (m_psm == rhs.m_psm);
+	}
+	bool operator!=(const GSOffset& rhs) const
+	{
+		return !operator==(rhs);
+	}
+
 	/// Help the optimizer by using this method instead of GSLocalMemory::GetOffset when the PSM is known
 	constexpr static GSOffset fromKnownPSM(u32 bp, u32 bw, GS_PSM psm);
 
@@ -345,7 +357,7 @@ public:
 						touched[idx] |= mask;
 					}
 
-					if (y < yCnt - 1)
+					if (y < yCnt - 2)
 					{
 						startOff = midRowPgXStart;
 						endOff   = midRowPgXEnd;
@@ -371,7 +383,7 @@ public:
 						if (!fn(pos % MAX_PAGES))
 							return;
 
-					if (y < yCnt - 1)
+					if (y < yCnt - 2)
 					{
 						startOff = midRowPgXStart;
 						endOff   = midRowPgXEnd;
@@ -420,6 +432,8 @@ public:
 #undef MATCH
 		return o;
 	}
+
+	inline GSVector4i GetRect(const u32 page) const noexcept;
 };
 
 inline u32 GSSwizzleInfo::bn(int x, int y, u32 bp, u32 bw) const
@@ -1198,4 +1212,30 @@ constexpr inline GSOffset GSOffset::fromKnownPSM(u32 bp, u32 bw, GS_PSM psm)
 		case PSM_PSMZ16S:  return GSOffset(GSLocalMemory::swizzle16SZ, bp, bw, psm);
 	}
 	return GSOffset(GSLocalMemory::swizzle32, bp, bw, psm);
+}
+
+inline GSVector4i GSOffset::GetRect(const u32 page) const noexcept
+{
+	const u32 _bw = bw();
+	if (!_bw)
+	{
+		Console.Warning("GSOffset::GetRect - BW == 0");
+		return { 0, 0, 0, 0 };
+	}
+	ASSERT(page < MAX_PAGES);
+	ASSERT(psm() < 64);
+	const u32 page0 = bp() >> 5;
+	ASSERT(page0 < MAX_PAGES);
+	const u32 p = ((int)page - (int)page0) % MAX_PAGES;
+	const GSVector2i s = GSLocalMemory::m_psm[psm()].pgs;
+	const u32 row = p / _bw;
+	const u32 col = p - row * _bw;
+	const u32 x0 = col * s.x;
+	const u32 y0 = row * s.y;
+	const u32 x1 = x0 + s.x;
+	const u32 y1 = y0 + s.y;
+	const GSVector4i r = GSVector4i(x0, y0, x1, y1);
+	const GSVector4i ro = r.ralign<Align_Outside>(s);
+	assert(r.eq(ro));
+	return r;
 }

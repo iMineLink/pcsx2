@@ -39,27 +39,27 @@ private:
 
 #pragma region hacks
 
-	typedef bool (GSRendererHW::*OI_Ptr)(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
+	typedef bool (GSRendererHW::*OI_Ptr)(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
 	typedef void (GSRendererHW::*OO_Ptr)();
 	typedef bool (GSRendererHW::*CU_Ptr)();
 
 	// Require special argument
-	bool OI_BlitFMV(GSTextureCache::Target* _rt, GSTextureCache::Source* t, const GSVector4i& r_draw);
+	bool OI_BlitFMV(GSTextureCache::Surface* _rt, GSTextureCache::Surface* t, const GSVector4i& r_draw);
 	void OI_GsMemClear(); // always on
 	void OI_DoubleHalfClear(GSTexture* rt, GSTexture* ds); // always on
 
-	bool OI_BigMuthaTruckers(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_DBZBTGames(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_FFXII(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_FFX(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_MetalSlug6(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_RozenMaidenGebetGarden(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_SonicUnleashed(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_PointListPalette(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_SuperManReturns(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_ArTonelico2(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_JakGames(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
-	bool OI_BurnoutGames(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* t);
+	bool OI_BigMuthaTruckers(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
+	bool OI_DBZBTGames(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
+	bool OI_FFXII(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
+	bool OI_FFX(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
+	bool OI_MetalSlug6(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
+	bool OI_RozenMaidenGebetGarden(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
+	bool OI_SonicUnleashed(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
+	bool OI_PointListPalette(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
+	bool OI_SuperManReturns(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
+	bool OI_ArTonelico2(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
+	bool OI_JakGames(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
+	bool OI_BurnoutGames(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* t);
 
 	void OO_MajokkoALaMode2();
 	void OO_BurnoutGames();
@@ -146,9 +146,9 @@ private:
 protected:
 	GSTextureCache* m_tc;
 	GSVector4i m_r;
-	GSTextureCache::Source* m_src;
+	GSTextureCache::Surface* m_src;
 
-	virtual void DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* tex) = 0;
+	virtual void DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* tex) = 0;
 
 	int m_userhacks_round_sprite_offset;
 	int m_userHacks_HPO;
@@ -178,10 +178,10 @@ public:
 	void Lines2Sprites();
 	void EmulateAtst(GSVector4& FogColor_AREF, u8& atst, const bool pass_2);
 	void ConvertSpriteTextureShuffle(bool& write_ba, bool& read_ba);
-	GSVector4 RealignTargetTextureCoordinate(const GSTextureCache::Source* tex);
+	GSVector4 RealignTargetTextureCoordinate(const GSTextureCache::Surface* tex);
 	GSVector4i ComputeBoundingBox(const GSVector2& rtscale, const GSVector2i& rtsize);
-	void MergeSprite(GSTextureCache::Source* tex);
-	GSVector2 GetTextureScaleFactor();
+	void MergeSprite(GSTextureCache::Surface* tex);
+	u32 GetTextureScaleFactor();
 
 	void Reset();
 	void VSync(int field);
@@ -189,7 +189,7 @@ public:
 	GSTexture* GetOutput(int i, int& y_offset);
 	GSTexture* GetFeedbackOutput();
 	void InvalidateVideoMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r);
-	void InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r, bool clut = false);
+	void InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r);
 	void Draw();
 
 	// Called by the texture cache to know if current texture is useful

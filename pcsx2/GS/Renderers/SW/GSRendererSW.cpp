@@ -659,11 +659,11 @@ void GSRendererSW::InvalidateVideoMem(const GIFRegBITBLTBUF& BITBLTBUF, const GS
 	m_tc->InvalidatePages(pages, off.psm()); // if texture update runs on a thread and Sync(5) happens then this must come later
 }
 
-void GSRendererSW::InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r, bool clut)
+void GSRendererSW::InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r)
 {
 	if (LOG)
 	{
-		fprintf(s_fp, "%s %05x %u %u, %d %d %d %d\n", clut ? "rp" : "r", BITBLTBUF.SBP, BITBLTBUF.SBW, BITBLTBUF.SPSM, r.x, r.y, r.z, r.w);
+		fprintf(s_fp, "%s %05x %u %u, %d %d %d %d\n", "r", BITBLTBUF.SBP, BITBLTBUF.SBW, BITBLTBUF.SPSM, r.x, r.y, r.z, r.w);
 		fflush(s_fp);
 	}
 

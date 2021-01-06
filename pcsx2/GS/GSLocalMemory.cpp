@@ -453,9 +453,9 @@ std::vector<GSVector2i>* GSLocalMemory::GetPage2TileMap(const GIFRegTEX0& TEX0)
 {
 	u64 hash = TEX0.U64 & 0x3ffffffffull; // TBP0 TBW PSM TW TH
 
-	auto it = m_p2tmap.find(hash);
+	const auto& it = m_p2tmap.find(hash);
 
-	if (it != m_p2tmap.end())
+	if (it != m_p2tmap.cend())
 	{
 		return it->second;
 	}

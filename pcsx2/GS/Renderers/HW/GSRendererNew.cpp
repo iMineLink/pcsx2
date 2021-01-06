@@ -356,8 +356,9 @@ void GSRendererNew::EmulateTextureShuffleAndFbmask()
 	}
 }
 
-void GSRendererNew::EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::Source* tex)
+void GSRendererNew::EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::Surface* tex)
 {
+#if 0
 	// Uncomment to disable HLE emulation (allow to trace the draw call)
 	// m_channel_shuffle = false;
 
@@ -390,7 +391,7 @@ void GSRendererNew::EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::
 				m_channel_shuffle = false;
 			}
 		}
-		else if ((tex->m_texture->GetType() == GSTexture::Type::DepthStencil) && !(tex->m_32_bits_fmt))
+		else if ((tex->GetTexture()->GetType() == GSTexture::Type::DepthStencil) && !(tex->m_32_bits_fmt))
 		{
 			// So far 2 games hit this code path. Urban Chaos and Tales of Abyss
 			// UC: will copy depth to green channel
@@ -510,6 +511,7 @@ void GSRendererNew::EmulateChannelShuffle(GSTexture** rt, const GSTextureCache::
 	{
 		m_conf.raw_tex = nullptr;
 	}
+#endif
 }
 
 void GSRendererNew::EmulateBlending(bool& DATE_GL42, bool& DATE_GL45)
@@ -762,7 +764,7 @@ void GSRendererNew::EmulateBlending(bool& DATE_GL42, bool& DATE_GL45)
 	}
 }
 
-void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Source* tex)
+void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Surface* tex)
 {
 	// Warning fetch the texture PSM format rather than the context format. The latter could have been corrected in the texture cache for depth.
 	//const GSLocalMemory::psm_t &psm = GSLocalMemory::m_psm[m_context->TEX0.PSM];
@@ -774,7 +776,7 @@ void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Source* tex)
 	const bool complex_wms_wmt = !!((wms | wmt) & 2);
 
 	const bool need_mipmap = IsMipMapDraw();
-	const bool shader_emulated_sampler = tex->m_palette || cpsm.fmt != 0 || complex_wms_wmt || psm.depth;
+	const bool shader_emulated_sampler = tex->GetPalette() || cpsm.fmt != 0 || complex_wms_wmt || psm.depth;
 	const bool trilinear_manual = need_mipmap && m_mipmap == 2;
 
 	bool bilinear = m_vt.IsLinear();
@@ -816,12 +818,12 @@ void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Source* tex)
 		// Force a 32 bits access (normally shuffle is done on 16 bits)
 		// m_ps_sel.tex_fmt = 0; // removed as an optimization
 		m_conf.ps.aem = m_env.TEXA.AEM;
-		ASSERT(tex->m_target);
+		// ASSERT(tex->m_target);
 
 		// Require a float conversion if the texure is a depth otherwise uses Integral scaling
 		if (psm.depth)
 		{
-			m_conf.ps.depth_fmt = (tex->m_texture->GetType() != GSTexture::Type::DepthStencil) ? 3 : 1;
+			m_conf.ps.depth_fmt = (tex->GetTexture()->GetType() != GSTexture::Type::DepthStencil) ? 3 : 1;
 		}
 
 		// Shuffle is a 16 bits format, so aem is always required
@@ -836,7 +838,7 @@ void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Source* tex)
 		GSVector4 half_pixel = RealignTargetTextureCoordinate(tex);
 		m_conf.cb_vs.texture_offset = GSVector2(half_pixel.x, half_pixel.y);
 	}
-	else if (tex->m_target)
+	else if (false)
 	{
 		// Use an old target. AEM and index aren't resolved it must be done
 		// on the GPU
@@ -855,7 +857,7 @@ void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Source* tex)
 		}
 
 		// Select the index format
-		if (tex->m_palette)
+		if (tex->GetPalette())
 		{
 			// FIXME Potentially improve fmt field in GSLocalMemory
 			if (m_context->TEX0.PSM == PSM_PSMT4HL)
@@ -872,7 +874,7 @@ void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Source* tex)
 		}
 
 		// Depth format
-		if (tex->m_texture->GetType() == GSTexture::Type::DepthStencil)
+		if (tex->GetTexture()->GetType() == GSTexture::Type::DepthStencil)
 		{
 			// Require a float conversion if the texure is a depth format
 			m_conf.ps.depth_fmt = (psm.bpp == 16) ? 2 : 1;
@@ -892,7 +894,7 @@ void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Source* tex)
 		GSVector4 half_pixel = RealignTargetTextureCoordinate(tex);
 		m_conf.cb_vs.texture_offset = GSVector2(half_pixel.x, half_pixel.y);
 	}
-	else if (tex->m_palette)
+	else if (tex->GetPalette())
 	{
 		// Use a standard 8 bits texture. AEM is already done on the CLUT
 		// Therefore you only need to set the index
@@ -923,8 +925,8 @@ void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Source* tex)
 	m_conf.ps.ltf = bilinear && shader_emulated_sampler;
 	m_conf.ps.point_sampler = m_dev->Features().broken_point_sampler && (!bilinear || shader_emulated_sampler);
 
-	const int w = tex->m_texture->GetWidth();
-	const int h = tex->m_texture->GetHeight();
+	const int w = tex->GetTexture()->GetWidth();
+	const int h = tex->GetTexture()->GetHeight();
 
 	const int tw = (int)(1 << m_context->TEX0.TW);
 	const int th = (int)(1 << m_context->TEX0.TH);
@@ -950,7 +952,7 @@ void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Source* tex)
 	}
 	else if (trilinear_auto)
 	{
-		tex->m_texture->GenerateMipmap();
+		tex->GetTexture()->GenerateMipmap();
 	}
 
 	// TC Offset Hack
@@ -968,7 +970,7 @@ void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Source* tex)
 		m_conf.cb_ps.WH.y = (float)(1 << m_context->stack.TEX0.TH);
 
 		// We can't handle m_target with invalid_tex0 atm due to upscaling
-		ASSERT(!tex->m_target);
+		// ASSERT(!tex->m_target);
 	}
 
 	// Only enable clamping in CLAMP mode. REGION_CLAMP will be done manually in the shader
@@ -998,8 +1000,8 @@ void GSRendererNew::EmulateTextureSampler(const GSTextureCache::Source* tex)
 		}
 	}
 
-	m_conf.tex = tex->m_texture;
-	m_conf.pal = tex->m_palette;
+	m_conf.tex = tex->GetTexture();
+	m_conf.pal = tex->GetPalette();
 }
 
 GSRendererNew::PRIM_OVERLAP GSRendererNew::PrimitiveOverlap()
@@ -1157,14 +1159,14 @@ void GSRendererNew::ResetStates()
 	memset(&m_conf, 0, reinterpret_cast<const char*>(&m_conf.cb_vs) - reinterpret_cast<const char*>(&m_conf));
 }
 
-void GSRendererNew::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Source* tex)
+void GSRendererNew::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Surface* tex)
 {
 #ifdef ENABLE_OGL_DEBUG
 	GSVector4i area_out = GSVector4i(m_vt.m_min.p.xyxy(m_vt.m_max.p)).rintersect(GSVector4i(m_context->scissor.in));
 	GSVector4i area_in  = GSVector4i(m_vt.m_min.t.xyxy(m_vt.m_max.t));
 
 	GL_PUSH("GL Draw from %d (area %d,%d => %d,%d) in %d (Depth %d) (area %d,%d => %d,%d)",
-		tex && tex->m_texture ? tex->m_texture->GetID() : -1,
+		tex && tex->GetTexture() ? tex->GetTexture()->GetID() : -1,
 		area_in.x, area_in.y, area_in.z, area_in.w,
 		rt ? rt->GetID() : -1, ds ? ds->GetID() : -1,
 		area_out.x, area_out.y, area_out.z, area_out.w);
@@ -1490,11 +1492,11 @@ void GSRendererNew::DrawPrims(GSTexture* rt, GSTexture* ds, GSTextureCache::Sour
 			m_conf.raw_tex = ds;
 
 			// We need the palette to convert the depth to the correct alpha value.
-			if (!tex->m_palette)
+			if (!tex->GetPalette())
 			{
 				const u16 pal = GSLocalMemory::m_psm[tex->m_TEX0.PSM].pal;
-				m_tc->AttachPaletteToSource(tex, pal, true);
-				m_conf.pal = tex->m_palette;
+				tex->AttachPalette(m_tc->GetPaletteMap());
+				m_conf.pal = tex->GetPalette();
 			}
 		}
 	}

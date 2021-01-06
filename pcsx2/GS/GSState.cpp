@@ -883,7 +883,7 @@ void GSState::ApplyTEX0(GIFRegTEX0& TEX0)
 				blocks >>= 1;
 
 			for (int j = 0; j < blocks; j++, BITBLTBUF.SBP++)
-				InvalidateLocalMem(BITBLTBUF, r, true);
+				InvalidateLocalMem(BITBLTBUF, r);
 		}
 		else
 		{
@@ -896,7 +896,7 @@ void GSState::ApplyTEX0(GIFRegTEX0& TEX0)
 			r.right = r.left + GSLocalMemory::m_psm[TEX0.CPSM].pal;
 			r.bottom = r.top + 1;
 
-			InvalidateLocalMem(BITBLTBUF, r, true);
+			InvalidateLocalMem(BITBLTBUF, r);
 		}
 
 		m_mem.m_clut.Write(m_env.CTXT[i].TEX0, m_env.TEXCLUT);
@@ -1567,6 +1567,11 @@ void GSState::Write(const u8* mem, int len)
 		r.right = r.left + m_env.TRXREG.RRW;
 		r.bottom = r.top + m_env.TRXREG.RRH;
 
+		GIFRegBITBLTBUF blit_local;
+		blit_local.SBP = blit.DBP;
+		blit_local.SBW = blit.DBW;
+		blit_local.SPSM = blit.DPSM;
+		InvalidateLocalMem(blit_local, r);  // Readback before writing.
 		InvalidateVideoMem(blit, r);
 
 		(m_mem.*psm.wi)(m_tr.x, m_tr.y, mem, m_tr.total, blit, m_env.TRXPOS, m_env.TRXREG);

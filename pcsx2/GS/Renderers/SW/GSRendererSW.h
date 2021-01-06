@@ -89,7 +89,7 @@ protected:
 	void Queue(GSRingHeap::SharedPtr<GSRasterizerData>& item);
 	void Sync(int reason);
 	void InvalidateVideoMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r);
-	void InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r, bool clut = false);
+	void InvalidateLocalMem(const GIFRegBITBLTBUF& BITBLTBUF, const GSVector4i& r);
 
 	void UsePages(const GSOffset::PageLooper& pages, const int type);
 	void ReleasePages(const GSOffset::PageLooper& pages, const int type);

@@ -266,7 +266,7 @@ bool GSDeviceOGL::Create(const WindowInfo& wi)
 	// Debug helper
 	// ****************************************************************
 #ifdef ENABLE_OGL_DEBUG
-	if (theApp.GetConfigB("debug_opengl"))
+	if (true || theApp.GetConfigB("debug_opengl"))
 	{
 		glDebugMessageCallback((GLDEBUGPROC)DebugOutputToFile, NULL);
 		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS_ARB);
